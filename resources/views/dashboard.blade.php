@@ -155,10 +155,17 @@
     <script>
         let currentDevice = {{ $devices->first()->device_id }};
         let currentDeviceName = "{{ $devices->first()->device_name }}";
+        
+        // ตัวล็อคป้องกันเกณฑ์โดนเขียนทับ
+        let isThresholdLoaded = false; 
 
         function loadDevice(id, name) { 
             currentDevice = id; 
             currentDeviceName = name;
+            
+            // รีเซ็ตตัวล็อคทุกครั้งที่สลับหน้าอุปกรณ์
+            isThresholdLoaded = false; 
+            
             document.getElementById('current-device-display').innerText = `(กำลังดู: ${name})`;
             document.getElementById('ph-val').innerText = '--';
             document.getElementById('temp-val').innerText = '-- °C';
@@ -177,18 +184,15 @@
                     modeBadge.className = data.current_mode === 'AUTO' ? "mode-badge mode-auto" : "mode-badge mode-manual";
 
                     const form = document.getElementById('threshold-form');
-                    if(form) {
-                        // 🛑 เช็คว่าช่อง Input ไม่ได้ถูกคลิกใช้งานอยู่ ถึงจะยอมเอาค่าจากฐานข้อมูลมาทับ
-                        if (document.activeElement !== document.getElementById('input-ph-min')) {
-                            document.getElementById('input-ph-min').value = data.ph_min === null ? '' : data.ph_min;
-                        }
-                        if (document.activeElement !== document.getElementById('input-ph-max')) {
-                            document.getElementById('input-ph-max').value = data.ph_max === null ? '' : data.ph_max;
-                        }
-                        if (document.activeElement !== document.getElementById('input-turb-max')) {
-                            document.getElementById('input-turb-max').value = data.turb_max === null ? '' : data.turb_max;
-                        }
+                    
+                    // อัปเดตค่าฟอร์มเกณฑ์แค่ครั้งเดียว
+                    if(form && !isThresholdLoaded) {
+                        document.getElementById('input-ph-min').value = data.ph_min === null ? '' : data.ph_min;
+                        document.getElementById('input-ph-max').value = data.ph_max === null ? '' : data.ph_max;
+                        document.getElementById('input-turb-max').value = data.turb_max === null ? '' : data.turb_max;
                         form.action = `/update-thresholds/${currentDevice}`; 
+                        
+                        isThresholdLoaded = true; // ล็อคไม่ให้อัปเดตซ้ำ
                     }
 
                     if(data.ph_value === null) return;
@@ -216,7 +220,6 @@
         }
 
         function sendCommand(action, mode) {
-            // 🛑 ส่งคำสั่งเปิดปิดไปที่ Route ของหน้าเว็บปกติ และแนบ CSRF Token ยืนยันตัวตน
             fetch('/send-command', {
                 method: 'POST',
                 headers: { 
