@@ -127,7 +127,7 @@
 
                     <div style="border-top: 1px solid #eee; padding-top: 15px;">
                         <h4 style="color: #2c3e50; margin-bottom: 10px;">⚙️ ตั้งค่าเกณฑ์แจ้งเตือน (อุปกรณ์นี้)</h4>
-                        <form id="threshold-form" method="POST" style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
+                        <form id="threshold-form" action="/update-thresholds/{{ $devices->first()->device_id }}" method="POST" style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
                             @csrf
                             <div>
                                 <label style="font-size: 14px; color: #555;">pH ต่ำสุด:</label><br>
@@ -170,17 +170,14 @@
             fetch(`/api/get-latest-data/${currentDevice}`)
                 .then(res => res.json())
                 .then(data => {
-                    if(!data || data.ph_value === null) return;
+                    if(!data) return;
                     
-                    document.getElementById('ph-val').innerText = parseFloat(data.ph_value).toFixed(2);
-                    document.getElementById('temp-val').innerText = parseFloat(data.temperature).toFixed(1) + ' °C';
-                    document.getElementById('turb-val').innerText = parseFloat(data.turbidity).toFixed(2) + ' NTU';
-                    
+                    // 1. อัปเดตโหมดเสมอ! (ต่อให้เซ็นเซอร์พังหรือยังไม่ส่งค่ามา โหมดก็ต้องโชว์)
                     const modeBadge = document.getElementById('current-mode-display');
                     modeBadge.innerText = "โหมด: " + data.current_mode;
                     modeBadge.className = data.current_mode === 'AUTO' ? "mode-badge mode-auto" : "mode-badge mode-manual";
 
-                    // เติมค่าลงในช่องกรอก (ถ้าเป็น Admin)
+                    // 2. เติมค่าฟอร์มเกณฑ์เสมอ! (ให้ฟอร์มพร้อมบันทึกถูกอุปกรณ์ตลอด)
                     const form = document.getElementById('threshold-form');
                     if(form) {
                         document.getElementById('input-ph-min').value = data.ph_min;
@@ -189,6 +186,13 @@
                         form.action = `/update-thresholds/${currentDevice}`; 
                     }
 
+                    // 3. เช็คว่ามีค่าน้ำส่งมาหรือเปล่า ถ้าไม่มีให้หยุดอัปเดตแค่ป้ายตัวเลข
+                    if(data.ph_value === null) return;
+                    
+                    document.getElementById('ph-val').innerText = parseFloat(data.ph_value).toFixed(2);
+                    document.getElementById('temp-val').innerText = parseFloat(data.temperature).toFixed(1) + ' °C';
+                    document.getElementById('turb-val').innerText = parseFloat(data.turbidity).toFixed(2) + ' NTU';
+                    
                     checkAlerts(data.ph_value, data.turbidity, data.ph_min, data.ph_max, data.turb_max);
                 }).catch(err => console.log(err));
         }
