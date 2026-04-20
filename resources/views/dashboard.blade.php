@@ -172,21 +172,25 @@
                 .then(data => {
                     if(!data) return;
                     
-                    // 1. อัปเดตโหมดเสมอ! (ต่อให้เซ็นเซอร์พังหรือยังไม่ส่งค่ามา โหมดก็ต้องโชว์)
                     const modeBadge = document.getElementById('current-mode-display');
                     modeBadge.innerText = "โหมด: " + data.current_mode;
                     modeBadge.className = data.current_mode === 'AUTO' ? "mode-badge mode-auto" : "mode-badge mode-manual";
 
-                    // 2. เติมค่าฟอร์มเกณฑ์เสมอ! (ให้ฟอร์มพร้อมบันทึกถูกอุปกรณ์ตลอด)
                     const form = document.getElementById('threshold-form');
                     if(form) {
-                        document.getElementById('input-ph-min').value = data.ph_min;
-                        document.getElementById('input-ph-max').value = data.ph_max;
-                        document.getElementById('input-turb-max').value = data.turb_max;
+                        // 🛑 เช็คว่าช่อง Input ไม่ได้ถูกคลิกใช้งานอยู่ ถึงจะยอมเอาค่าจากฐานข้อมูลมาทับ
+                        if (document.activeElement !== document.getElementById('input-ph-min')) {
+                            document.getElementById('input-ph-min').value = data.ph_min === null ? '' : data.ph_min;
+                        }
+                        if (document.activeElement !== document.getElementById('input-ph-max')) {
+                            document.getElementById('input-ph-max').value = data.ph_max === null ? '' : data.ph_max;
+                        }
+                        if (document.activeElement !== document.getElementById('input-turb-max')) {
+                            document.getElementById('input-turb-max').value = data.turb_max === null ? '' : data.turb_max;
+                        }
                         form.action = `/update-thresholds/${currentDevice}`; 
                     }
 
-                    // 3. เช็คว่ามีค่าน้ำส่งมาหรือเปล่า ถ้าไม่มีให้หยุดอัปเดตแค่ป้ายตัวเลข
                     if(data.ph_value === null) return;
                     
                     document.getElementById('ph-val').innerText = parseFloat(data.ph_value).toFixed(2);
@@ -212,14 +216,23 @@
         }
 
         function sendCommand(action, mode) {
-            fetch('/api/send-command', {
+            // 🛑 ส่งคำสั่งเปิดปิดไปที่ Route ของหน้าเว็บปกติ และแนบ CSRF Token ยืนยันตัวตน
+            fetch('/send-command', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json', 
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
                 body: JSON.stringify({ device_id: currentDevice, command_action: action, operating_mode: mode })
-            }).then(() => {
-                alert(`ส่งคำสั่งเรียบร้อยแล้ว`);
-                fetchData(); 
-            });
+            }).then(res => {
+                if(res.ok) {
+                    alert(`ส่งคำสั่งเรียบร้อยแล้ว`);
+                    fetchData(); 
+                } else {
+                    alert('เกิดข้อผิดพลาดในการส่งคำสั่ง');
+                }
+            }).catch(err => console.log(err));
         }
 
         document.getElementById('current-device-display').innerText = `(กำลังดู: ${currentDeviceName})`;
