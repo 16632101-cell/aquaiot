@@ -127,19 +127,18 @@
 
                     <div style="border-top: 1px solid #eee; padding-top: 15px;">
                         <h4 style="color: #2c3e50; margin-bottom: 10px;">⚙️ ตั้งค่าเกณฑ์แจ้งเตือน (อุปกรณ์นี้)</h4>
-                        <form id="threshold-form" action="/update-thresholds/{{ $devices->first()->device_id }}" method="POST" style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
-                            @csrf
+                        <form id="threshold-form" onsubmit="saveThresholds(event)" style="display: flex; gap: 15px; align-items: flex-end; flex-wrap: wrap;">
                             <div>
                                 <label style="font-size: 14px; color: #555;">pH ต่ำสุด:</label><br>
-                                <input type="number" step="0.1" name="ph_min" id="input-ph-min" style="width: 80px; padding: 5px;" required>
+                                <input type="number" step="0.1" id="input-ph-min" style="width: 80px; padding: 5px;" required>
                             </div>
                             <div>
                                 <label style="font-size: 14px; color: #555;">pH สูงสุด:</label><br>
-                                <input type="number" step="0.1" name="ph_max" id="input-ph-max" style="width: 80px; padding: 5px;" required>
+                                <input type="number" step="0.1" id="input-ph-max" style="width: 80px; padding: 5px;" required>
                             </div>
                             <div>
                                 <label style="font-size: 14px; color: #555;">ความขุ่นสูงสุด:</label><br>
-                                <input type="number" step="0.1" name="turb_max" id="input-turb-max" style="width: 80px; padding: 5px;" required>
+                                <input type="number" step="0.1" id="input-turb-max" style="width: 80px; padding: 5px;" required>
                             </div>
                             <button type="submit" class="btn btn-open" style="padding: 7px 15px; background-color: #f39c12;">💾 บันทึกเกณฑ์</button>
                         </form>
@@ -156,14 +155,11 @@
         let currentDevice = {{ $devices->first()->device_id }};
         let currentDeviceName = "{{ $devices->first()->device_name }}";
         
-        // ตัวล็อคป้องกันเกณฑ์โดนเขียนทับ
         let isThresholdLoaded = false; 
 
         function loadDevice(id, name) { 
             currentDevice = id; 
             currentDeviceName = name;
-            
-            // รีเซ็ตตัวล็อคทุกครั้งที่สลับหน้าอุปกรณ์
             isThresholdLoaded = false; 
             
             document.getElementById('current-device-display').innerText = `(กำลังดู: ${name})`;
@@ -185,14 +181,11 @@
 
                     const form = document.getElementById('threshold-form');
                     
-                    // อัปเดตค่าฟอร์มเกณฑ์แค่ครั้งเดียว
                     if(form && !isThresholdLoaded) {
                         document.getElementById('input-ph-min').value = data.ph_min === null ? '' : data.ph_min;
                         document.getElementById('input-ph-max').value = data.ph_max === null ? '' : data.ph_max;
                         document.getElementById('input-turb-max').value = data.turb_max === null ? '' : data.turb_max;
-                        form.action = `/update-thresholds/${currentDevice}`; 
-                        
-                        isThresholdLoaded = true; // ล็อคไม่ให้อัปเดตซ้ำ
+                        isThresholdLoaded = true; 
                     }
 
                     if(data.ph_value === null) return;
@@ -236,6 +229,44 @@
                     alert('เกิดข้อผิดพลาดในการส่งคำสั่ง');
                 }
             }).catch(err => console.log(err));
+        }
+
+        // ฟังก์ชันพระเอกของเรา เซฟข้อมูลแบบไม่ต้องรีเฟรชหน้า
+        function saveThresholds(event) {
+            event.preventDefault(); 
+            
+            let ph_min = document.getElementById('input-ph-min').value;
+            let ph_max = document.getElementById('input-ph-max').value;
+            let turb_max = document.getElementById('input-turb-max').value;
+
+            fetch(`/update-thresholds/${currentDevice}`, {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json', 
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({ ph_min: ph_min, ph_max: ph_max, turb_max: turb_max })
+            })
+            .then(async res => {
+                const data = await res.json();
+                if (!res.ok) {
+                    let errorMsg = "❌ ตั้งค่าไม่สำเร็จ:\n";
+                    if(data.errors) {
+                        for(let key in data.errors) {
+                            errorMsg += `- ${data.errors[key][0]}\n`;
+                        }
+                    } else {
+                        errorMsg += data.message;
+                    }
+                    alert(errorMsg); 
+                } else {
+                    alert('✅ ' + data.message);
+                    isThresholdLoaded = false; 
+                    fetchData(); 
+                }
+            })
+            .catch(err => alert('❌ เกิดข้อผิดพลาดในการส่งข้อมูล'));
         }
 
         document.getElementById('current-device-display').innerText = `(กำลังดู: ${currentDeviceName})`;

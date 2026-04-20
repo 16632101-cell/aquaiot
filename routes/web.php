@@ -1,4 +1,5 @@
 <?php
+
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\IoTController;
@@ -16,20 +17,17 @@ Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 // ระบบ Dashboard (ต้อง Login ก่อน)
 Route::middleware(['auth'])->group(function () {
     
-    // ดึงข้อมูลอุปกรณ์ทั้งหมดไปแสดงที่หน้า Dashboard
     Route::get('/dashboard', function () {
         $devices = IoTDevice::all(); 
         return view('dashboard', compact('devices'));
     })->name('dashboard');
 
-    // จัดการอุปกรณ์ (เฉพาะ Admin จะถูกเช็กใน Controller)
+    // จัดการอุปกรณ์ (เฉพาะ Admin)
     Route::post('/add-device', [IoTController::class, 'addDevice']);
     Route::post('/delete-device/{device_id}', [IoTController::class, 'deleteDevice']);
     Route::post('/toggle-device/{device_id}', [IoTController::class, 'toggleDeviceStatus']);
     
-    // เส้นทางสำหรับบันทึกเกณฑ์แจ้งเตือน
+    // เส้นทางสำหรับเซฟเกณฑ์แจ้งเตือน และ ส่งคำสั่ง (AJAX)
     Route::post('/update-thresholds/{device_id}', [IoTController::class, 'updateThresholds']);
-
-    // 🛑 เพิ่มบรรทัดนี้: เส้นทางสำหรับส่งคำสั่งเปลี่ยนโหมดและเปิดปิดปั๊มน้ำ
     Route::post('/send-command', [IoTController::class, 'sendCommand']);
 });
