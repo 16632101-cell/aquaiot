@@ -29,4 +29,7 @@ Route::middleware(['auth'])->group(function () {
     
     // เส้นทางสำหรับบันทึกเกณฑ์แจ้งเตือน
     Route::post('/update-thresholds/{device_id}', [IoTController::class, 'updateThresholds']);
+
+    // 🛑 เพิ่มบรรทัดนี้: เส้นทางสำหรับส่งคำสั่งเปลี่ยนโหมดและเปิดปิดปั๊มน้ำ
+    Route::post('/send-command', [IoTController::class, 'sendCommand']);
 });
