@@ -67,6 +67,19 @@ class IoTController extends Controller
         $data    = WaterQuality::where('device_id', $device_id)->latest()->first();
         $command = SystemCommand::where('device_id', $device_id)->first();
 
+        // 🌟 เพิ่มฟีเจอร์ที่ 1: ดึงค่าย้อนหลัง 15 รายการล่าสุดสำหรับวาดกราฟ
+        $history = WaterQuality::where('device_id', $device_id)
+                    ->latest()->take(15)->get()->reverse()->values();
+
+        // 🌟 เพิ่มฟีเจอร์ที่ 2: ดึงประวัติที่ผิดปกติ (pH หรือความขุ่นเกินเกณฑ์) 5 รายการล่าสุด
+        $alerts = WaterQuality::where('device_id', $device_id)
+                    ->where(function($query) use ($device) {
+                        $query->where('ph_value', '<', $device->ph_min)
+                              ->orWhere('ph_value', '>', $device->ph_max)
+                              ->orWhere('turbidity', '>', $device->turb_max);
+                    })
+                    ->latest()->take(5)->get();
+
         return response()->json([
             'device_status' => $device->device_status,
             'ph_value'      => $data ? $data->ph_value    : null,
@@ -76,6 +89,8 @@ class IoTController extends Controller
             'ph_min'        => $device->ph_min  ?? 6.5,
             'ph_max'        => $device->ph_max  ?? 8.5,
             'turb_max'      => $device->turb_max ?? 20,
+            'history'       => $history, // ส่งข้อมูลกราฟไปหน้าเว็บ
+            'alerts'        => $alerts   // ส่งข้อมูลแจ้งเตือนไปหน้าเว็บ
         ]);
     }
 
@@ -114,12 +129,13 @@ class IoTController extends Controller
 
         $request->validate(['device_name' => 'required|string|max:255']);
 
+        // 🛑 แก้บั๊ก Error 500: ต้องใส่ค่าเริ่มต้นให้มันด้วย ห้ามใส่ null
         IoTDevice::create([
             'device_name'   => $request->device_name,
             'device_status' => 'online',
-            'ph_min'        => null, 
-            'ph_max'        => null,
-            'turb_max'      => null,
+            'ph_min'        => 6.5, 
+            'ph_max'        => 8.5,
+            'turb_max'      => 20.0,
         ]);
 
         return back()->with('success', 'เพิ่มอุปกรณ์สำเร็จ!');
@@ -146,7 +162,7 @@ class IoTController extends Controller
         $device = IoTDevice::where('device_id', $device_id)->first();
         if ($device) {
             $newStatus = ($device->device_status === 'online') ? 'offline' : 'online';
-            $device->update(['device_status' => $newStatus]);
+            IoTDevice::where('device_id', $device_id)->update(['device_status' => $newStatus]);
         }
 
         return back()->with('success', 'เปลี่ยนสถานะการทำงานเรียบร้อย');
@@ -166,15 +182,14 @@ class IoTController extends Controller
             'ph_max.gte' => '⚠️ ค่า "pH สูงสุด" ต้องมีค่ามากกว่าหรือเท่ากับ "pH ต่ำสุด" นะครับ!'
         ]);
 
-        // บังคับหาให้เจอ ถ้าไม่เจอเด้งพังเลย จะได้รู้ว่ารหัสผิด
         $device = IoTDevice::findOrFail($device_id);
         
-        // ยัดค่าและบังคับเซฟลงฐานข้อมูลโดยตรง
-        $device->ph_min   = $request->ph_min;
-        $device->ph_max   = $request->ph_max;
-        $device->turb_max = $request->turb_max;
-        $device->save(); 
+        $device->update([
+            'ph_min'   => $request->ph_min,
+            'ph_max'   => $request->ph_max,
+            'turb_max' => $request->turb_max
+        ]);
 
-        return response()->json(['status' => 'success', 'message' => 'บันทึกค่าเกณฑ์สำเร็จ!']);
+        return response()->json(['status' => 'success', 'message' => 'อัปเดตเกณฑ์แจ้งเตือนเรียบร้อยแล้ว!']);
     }
 }
