@@ -18,9 +18,9 @@
         .action-btn { padding: 6px; margin-left: 2px; font-size: 12px; font-weight: bold;}
         .main-content { flex: 1; padding: 20px; height: 100vh; overflow-y: auto; }
         .header { background-color: #34495e; padding: 15px; color: white; display: flex; justify-content: space-between; border-radius: 8px; margin-bottom: 20px;}
-        .card-container { display: flex; gap: 20px; flex-wrap: wrap; }
-        .card { background-color: white; color: #333; padding: 30px; border-radius: 8px; flex: 1; min-width: 250px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-top: 5px solid #3498db; }
-        .value { font-size: 3em; font-weight: bold; margin-top: 15px; color: #2980b9; }
+        .card-container { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px;}
+        .card { background-color: white; color: #333; padding: 20px; border-radius: 8px; flex: 1; min-width: 280px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); border-top: 5px solid #3498db; }
+        .value { font-size: 2.5em; font-weight: bold; margin-top: 10px; color: #2980b9; }
         .status-alert { color: #e74c3c; animation: blinker 1s linear infinite; }
         @keyframes blinker { 50% { opacity: 0; } }
         .controls { margin-top: 20px; background-color: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
@@ -107,27 +107,36 @@
             </h3>
 
             <div class="card-container">
-                <div class="card">
+                <div class="card" style="border-top-color: #2ecc71;">
                     <h3 style="margin: 0; color: #7f8c8d;">Water pH</h3>
-                    <div class="value" id="ph-val">--</div>
+                    <div class="value" id="ph-val" style="color: #2ecc71;">--</div>
                 </div>
-                <div class="card">
-                    <h3 style="margin: 0; color: #7f8c8d;">Temperature</h3>
-                    <div class="value" id="temp-val">-- °C</div>
-                </div>
-                <div class="card">
+                <div class="card" style="border-top-color: #3498db;">
                     <h3 style="margin: 0; color: #7f8c8d;">Water Turbidity</h3>
-                    <div class="value" id="turb-val">-- NTU</div>
+                    <div class="value" id="turb-val" style="color: #3498db;">-- NTU</div>
                 </div>
-
-                <div class="card" style="flex: 100%; padding-bottom: 15px; position: relative;">
-                    <h3 style="margin: 0 0 5px 0; color: #34495e;">📈 กราฟแสดงค่าน้ำย้อนหลัง</h3>
-                    <p style="font-size: 12px; color: #7f8c8d; margin-top: 0;">*ใช้ Scroll Mouse ในการซูมเข้า-ออก และสามารถคลิกค้างเพื่อลากดูกราฟย้อนหลังได้</p>
-                    <div style="height: 350px; width: 100%;">
-                        <canvas id="waterChart"></canvas>
-                    </div>
+                <div class="card" style="border-top-color: #e74c3c;">
+                    <h3 style="margin: 0; color: #7f8c8d;">Temperature</h3>
+                    <div class="value" id="temp-val" style="color: #e74c3c;">-- °C</div>
                 </div>
+            </div>
 
+            <div class="card-container">
+                <div class="card" style="border-top-color: #2ecc71; flex: 1; min-width: 300px;">
+                    <h4 style="margin: 0 0 10px 0; color: #2ecc71;">📈 ประวัติค่า pH</h4>
+                    <div style="height: 250px; width: 100%;"><canvas id="phChart"></canvas></div>
+                </div>
+                <div class="card" style="border-top-color: #3498db; flex: 1; min-width: 300px;">
+                    <h4 style="margin: 0 0 10px 0; color: #3498db;">📈 ประวัติความขุ่น (NTU)</h4>
+                    <div style="height: 250px; width: 100%;"><canvas id="turbChart"></canvas></div>
+                </div>
+                <div class="card" style="border-top-color: #e74c3c; flex: 1; min-width: 300px;">
+                    <h4 style="margin: 0 0 10px 0; color: #e74c3c;">📈 ประวัติอุณหภูมิ (°C)</h4>
+                    <div style="height: 250px; width: 100%;"><canvas id="tempChart"></canvas></div>
+                </div>
+            </div>
+
+            <div class="card-container">
                 <div class="card" style="flex: 100%; border-top-color: #e74c3c;">
                     <h3 style="margin: 0; color: #e74c3c;">⚠️ ประวัติการแจ้งเตือนผิดปกติ (5 รายการล่าสุด)</h3>
                     <table class="log-table">
@@ -190,45 +199,53 @@
         let currentDevice = {{ $devices->first()->device_id }};
         let currentDeviceName = "{{ $devices->first()->device_name }}";
         let isThresholdLoaded = false; 
-        let waterChart = null; 
+        
+        // ตัวแปรกราฟแยก 3 ตัว
+        let phChart = null; 
+        let turbChart = null; 
+        let tempChart = null;
 
-        // 🌟 สร้างโครงกราฟ 3 เส้น (pH, Turbidity, Temp) และเปิดใช้งานฟังก์ชันซูม/ลาก
-        function initChart() {
-            const ctx = document.getElementById('waterChart').getContext('2d');
-            waterChart = new Chart(ctx, {
+        // 🌟 ฟังก์ชันสร้างกราฟแบบแยก
+        function createChart(ctxId, labelName, lineColor) {
+            const ctx = document.getElementById(ctxId).getContext('2d');
+            return new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: [],
-                    datasets: [
-                        { label: 'pH Value', data: [], borderColor: '#2ecc71', backgroundColor: '#2ecc71', tension: 0.4, yAxisID: 'y', pointRadius: 3, borderWidth: 2 },
-                        { label: 'Turbidity (NTU)', data: [], borderColor: '#3498db', backgroundColor: '#3498db', tension: 0.4, yAxisID: 'y1', pointRadius: 3, borderWidth: 2 },
-                        { label: 'Temperature (°C)', data: [], borderColor: '#e74c3c', backgroundColor: '#e74c3c', tension: 0.4, yAxisID: 'y2', pointRadius: 3, borderWidth: 2 }
-                    ]
+                    datasets: [{ 
+                        label: labelName, 
+                        data: [], 
+                        borderColor: lineColor, 
+                        backgroundColor: lineColor + '33', // สีโปร่งใสใต้กราฟ
+                        fill: true,
+                        tension: 0.3, 
+                        pointRadius: 2, 
+                        borderWidth: 2 
+                    }]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
                     scales: {
-                        x: { ticks: { maxTicksLimit: 15 } },
-                        y: { type: 'linear', display: true, position: 'left', title: {display: true, text: 'pH'} },
-                        y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: {display: true, text: 'Turbidity (NTU)'} },
-                        y2: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: {display: true, text: 'Temp (°C)'} }
+                        x: { ticks: { maxTicksLimit: 10 } }, // โชว์แกน x ไม่ให้รกเกิน
+                        y: { display: true }
                     },
                     plugins: {
+                        legend: { display: false }, // ซ่อน Label ด้านบนเพราะมี Header บอกแล้ว
                         zoom: {
-                            pan: {
-                                enabled: true,
-                                mode: 'x' // เลื่อนซ้ายขวา
-                            },
-                            zoom: {
-                                wheel: { enabled: true },
-                                pinch: { enabled: true },
-                                mode: 'x' // ซูมเข้าออกด้วยการ Scroll
-                            }
+                            pan: { enabled: true, mode: 'x' },
+                            zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' }
                         }
                     }
                 }
             });
+        }
+
+        // 🌟 เริ่มต้นสร้างกราฟทั้ง 3 ตัว
+        function initCharts() {
+            phChart = createChart('phChart', 'pH Value', '#2ecc71');
+            turbChart = createChart('turbChart', 'Turbidity (NTU)', '#3498db');
+            tempChart = createChart('tempChart', 'Temperature (°C)', '#e74c3c');
         }
 
         function loadDevice(id, name) { 
@@ -242,8 +259,10 @@
             document.getElementById('turb-val').innerText = '-- NTU';
             document.getElementById('alert-log-body').innerHTML = '<tr><td colspan="4" style="text-align: center; color: #7f8c8d;">กำลังโหลดข้อมูล...</td></tr>';
             
-            // รีเซ็ตกราฟเวลาเปลี่ยนอุปกรณ์
-            if(waterChart) waterChart.resetZoom();
+            // รีเซ็ตการซูมเวลากดเปลี่ยนอุปกรณ์
+            if(phChart) phChart.resetZoom();
+            if(turbChart) turbChart.resetZoom();
+            if(tempChart) tempChart.resetZoom();
 
             fetchData(); 
         }
@@ -273,23 +292,32 @@
                         checkAlerts(data.ph_value, data.turbidity, data.ph_min, data.ph_max, data.turb_max);
                     }
 
-                    // 🌟 อัปเดตกราฟแบบไม่ให้มันกระตุกเวลากำลังลาก
-                    if (data.history && waterChart) {
-                        waterChart.data.labels = data.history.map(item => {
+                    // 🌟 อัปเดตกราฟทั้ง 3 ตัว
+                    if (data.history && phChart && turbChart && tempChart) {
+                        let timeLabels = data.history.map(item => {
                             let d = new Date(item.created_at);
                             return d.getHours().toString().padStart(2, '0') + ':' + 
                                    d.getMinutes().toString().padStart(2, '0') + ':' + 
                                    d.getSeconds().toString().padStart(2, '0');
                         });
-                        waterChart.data.datasets[0].data = data.history.map(item => item.ph_value);
-                        waterChart.data.datasets[1].data = data.history.map(item => item.turbidity);
-                        waterChart.data.datasets[2].data = data.history.map(item => item.temperature);
-                        
-                        // ใช้ update('none') เพื่อให้กราฟสมูท ไม่รีเซ็ตตอนที่เรากำลังซูมดู
-                        waterChart.update('none'); 
+
+                        // อัปเดต pH
+                        phChart.data.labels = timeLabels;
+                        phChart.data.datasets[0].data = data.history.map(item => item.ph_value);
+                        phChart.update('none'); // อัปเดตแบบไม่กระตุกตอนซูม
+
+                        // อัปเดต Turbidity
+                        turbChart.data.labels = timeLabels;
+                        turbChart.data.datasets[0].data = data.history.map(item => item.turbidity);
+                        turbChart.update('none');
+
+                        // อัปเดต Temp
+                        tempChart.data.labels = timeLabels;
+                        tempChart.data.datasets[0].data = data.history.map(item => item.temperature);
+                        tempChart.update('none');
                     }
 
-                    // 🌟 อัปเดตตารางประวัติการแจ้งเตือน
+                    // อัปเดตตารางประวัติการแจ้งเตือน
                     if (data.alerts) {
                         let logHtml = '';
                         if (data.alerts.length === 0) {
@@ -382,8 +410,8 @@
 
         document.getElementById('current-device-display').innerText = `(กำลังดู: ${currentDeviceName})`;
         
-        // 🌟 เรียกใช้ฟังก์ชันวาดกราฟเปล่าขึ้นมาตอนเปิดหน้าเว็บครั้งแรก
-        initChart(); 
+        // เรียกใช้ฟังก์ชันสร้างกราฟทั้ง 3 กล่องตอนโหลดเว็บ
+        initCharts(); 
         
         setInterval(fetchData, 2000); 
         fetchData();
