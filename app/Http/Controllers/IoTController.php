@@ -67,11 +67,10 @@ class IoTController extends Controller
         $data    = WaterQuality::where('device_id', $device_id)->latest()->first();
         $command = SystemCommand::where('device_id', $device_id)->first();
 
-        // 🌟 เพิ่มฟีเจอร์ที่ 1: ดึงค่าย้อนหลัง 15 รายการล่าสุดสำหรับวาดกราฟ
+        // 🌟 ดึงข้อมูลย้อนหลัง 60 รายการ (เพื่อให้กราฟมันลากซูมดูระยะเวลาได้เยอะขึ้น)
         $history = WaterQuality::where('device_id', $device_id)
-                    ->latest()->take(15)->get()->reverse()->values();
+                    ->latest()->take(60)->get()->reverse()->values();
 
-        // 🌟 เพิ่มฟีเจอร์ที่ 2: ดึงประวัติที่ผิดปกติ (pH หรือความขุ่นเกินเกณฑ์) 5 รายการล่าสุด
         $alerts = WaterQuality::where('device_id', $device_id)
                     ->where(function($query) use ($device) {
                         $query->where('ph_value', '<', $device->ph_min)
@@ -89,8 +88,8 @@ class IoTController extends Controller
             'ph_min'        => $device->ph_min  ?? 6.5,
             'ph_max'        => $device->ph_max  ?? 8.5,
             'turb_max'      => $device->turb_max ?? 20,
-            'history'       => $history, // ส่งข้อมูลกราฟไปหน้าเว็บ
-            'alerts'        => $alerts   // ส่งข้อมูลแจ้งเตือนไปหน้าเว็บ
+            'history'       => $history, 
+            'alerts'        => $alerts   
         ]);
     }
 
@@ -129,7 +128,6 @@ class IoTController extends Controller
 
         $request->validate(['device_name' => 'required|string|max:255']);
 
-        // 🛑 แก้บั๊ก Error 500: ต้องใส่ค่าเริ่มต้นให้มันด้วย ห้ามใส่ null
         IoTDevice::create([
             'device_name'   => $request->device_name,
             'device_status' => 'online',

@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <title>Aquarium IoT Control Panel</title>
+    
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    
     <style>
         body { font-family: Arial, sans-serif; background-color: #f4f4f4; margin: 0; display: flex; }
         .sidebar { width: 260px; background-color: #2c3e50; color: white; height: 100vh; padding: 20px; box-sizing: border-box; overflow-y: auto;}
@@ -29,7 +33,6 @@
         .mode-manual { background-color: #f39c12; }
         .no-device-screen { text-align: center; padding: 50px; background: white; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); margin-top: 20px;}
         
-        /* สไตล์สำหรับตารางแจ้งเตือน */
         .log-table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 14px;}
         .log-table th, .log-table td { padding: 10px; border-bottom: 1px solid #ddd; text-align: left; }
         .log-table th { background-color: #fdf2f2; color: #e74c3c; }
@@ -105,7 +108,7 @@
 
             <div class="card-container">
                 <div class="card">
-                    <h3 style="margin: 0; color: #7f8c8d;">Water pH / Distance</h3>
+                    <h3 style="margin: 0; color: #7f8c8d;">Water pH</h3>
                     <div class="value" id="ph-val">--</div>
                 </div>
                 <div class="card">
@@ -117,9 +120,10 @@
                     <div class="value" id="turb-val">-- NTU</div>
                 </div>
 
-                <div class="card" style="flex: 100%; padding-bottom: 15px;">
-                    <h3 style="margin: 0 0 15px 0; color: #34495e;">📈 กราฟแสดงค่าน้ำย้อนหลัง</h3>
-                    <div style="height: 300px; width: 100%;">
+                <div class="card" style="flex: 100%; padding-bottom: 15px; position: relative;">
+                    <h3 style="margin: 0 0 5px 0; color: #34495e;">📈 กราฟแสดงค่าน้ำย้อนหลัง</h3>
+                    <p style="font-size: 12px; color: #7f8c8d; margin-top: 0;">*ใช้ Scroll Mouse ในการซูมเข้า-ออก และสามารถคลิกค้างเพื่อลากดูกราฟย้อนหลังได้</p>
+                    <div style="height: 350px; width: 100%;">
                         <canvas id="waterChart"></canvas>
                     </div>
                 </div>
@@ -186,9 +190,9 @@
         let currentDevice = {{ $devices->first()->device_id }};
         let currentDeviceName = "{{ $devices->first()->device_name }}";
         let isThresholdLoaded = false; 
-        let waterChart = null; // ตัวแปรกราฟ
+        let waterChart = null; 
 
-        // 🌟 สร้างกราฟเปล่าๆ เตรียมไว้ก่อน
+        // 🌟 สร้างโครงกราฟ 3 เส้น (pH, Turbidity, Temp) และเปิดใช้งานฟังก์ชันซูม/ลาก
         function initChart() {
             const ctx = document.getElementById('waterChart').getContext('2d');
             waterChart = new Chart(ctx, {
@@ -196,16 +200,32 @@
                 data: {
                     labels: [],
                     datasets: [
-                        { label: 'pH Value', data: [], borderColor: '#2ecc71', backgroundColor: '#2ecc71', tension: 0.3, yAxisID: 'y' },
-                        { label: 'Turbidity (NTU)', data: [], borderColor: '#3498db', backgroundColor: '#3498db', tension: 0.3, yAxisID: 'y1' }
+                        { label: 'pH Value', data: [], borderColor: '#2ecc71', backgroundColor: '#2ecc71', tension: 0.4, yAxisID: 'y', pointRadius: 3, borderWidth: 2 },
+                        { label: 'Turbidity (NTU)', data: [], borderColor: '#3498db', backgroundColor: '#3498db', tension: 0.4, yAxisID: 'y1', pointRadius: 3, borderWidth: 2 },
+                        { label: 'Temperature (°C)', data: [], borderColor: '#e74c3c', backgroundColor: '#e74c3c', tension: 0.4, yAxisID: 'y2', pointRadius: 3, borderWidth: 2 }
                     ]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
                     interaction: { mode: 'index', intersect: false },
                     scales: {
+                        x: { ticks: { maxTicksLimit: 15 } },
                         y: { type: 'linear', display: true, position: 'left', title: {display: true, text: 'pH'} },
-                        y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: {display: true, text: 'Turbidity'} }
+                        y1: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: {display: true, text: 'Turbidity (NTU)'} },
+                        y2: { type: 'linear', display: true, position: 'right', grid: { drawOnChartArea: false }, title: {display: true, text: 'Temp (°C)'} }
+                    },
+                    plugins: {
+                        zoom: {
+                            pan: {
+                                enabled: true,
+                                mode: 'x' // เลื่อนซ้ายขวา
+                            },
+                            zoom: {
+                                wheel: { enabled: true },
+                                pinch: { enabled: true },
+                                mode: 'x' // ซูมเข้าออกด้วยการ Scroll
+                            }
+                        }
                     }
                 }
             });
@@ -221,6 +241,10 @@
             document.getElementById('temp-val').innerText = '-- °C';
             document.getElementById('turb-val').innerText = '-- NTU';
             document.getElementById('alert-log-body').innerHTML = '<tr><td colspan="4" style="text-align: center; color: #7f8c8d;">กำลังโหลดข้อมูล...</td></tr>';
+            
+            // รีเซ็ตกราฟเวลาเปลี่ยนอุปกรณ์
+            if(waterChart) waterChart.resetZoom();
+
             fetchData(); 
         }
 
@@ -249,22 +273,27 @@
                         checkAlerts(data.ph_value, data.turbidity, data.ph_min, data.ph_max, data.turb_max);
                     }
 
-                    // 🌟 อัปเดตกราฟ
+                    // 🌟 อัปเดตกราฟแบบไม่ให้มันกระตุกเวลากำลังลาก
                     if (data.history && waterChart) {
                         waterChart.data.labels = data.history.map(item => {
                             let d = new Date(item.created_at);
-                            return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
+                            return d.getHours().toString().padStart(2, '0') + ':' + 
+                                   d.getMinutes().toString().padStart(2, '0') + ':' + 
+                                   d.getSeconds().toString().padStart(2, '0');
                         });
                         waterChart.data.datasets[0].data = data.history.map(item => item.ph_value);
                         waterChart.data.datasets[1].data = data.history.map(item => item.turbidity);
-                        waterChart.update();
+                        waterChart.data.datasets[2].data = data.history.map(item => item.temperature);
+                        
+                        // ใช้ update('none') เพื่อให้กราฟสมูท ไม่รีเซ็ตตอนที่เรากำลังซูมดู
+                        waterChart.update('none'); 
                     }
 
                     // 🌟 อัปเดตตารางประวัติการแจ้งเตือน
                     if (data.alerts) {
                         let logHtml = '';
                         if (data.alerts.length === 0) {
-                            logHtml = '<tr><td colspan="4" style="text-align:center; color: #2ecc71;">✅ ปกติดี ไม่มีรายงานน้ำเสีย</td></tr>';
+                            logHtml = '<tr><td colspan="4" style="text-align:center; color: #2ecc71; font-weight:bold;">✅ ปกติดี ไม่มีรายงานน้ำเสีย</td></tr>';
                         } else {
                             data.alerts.forEach(item => {
                                 let dt = new Date(item.created_at).toLocaleString('th-TH');
@@ -352,7 +381,10 @@
         }
 
         document.getElementById('current-device-display').innerText = `(กำลังดู: ${currentDeviceName})`;
-        initChart(); // เรียกใช้กราฟครั้งแรก
+        
+        // 🌟 เรียกใช้ฟังก์ชันวาดกราฟเปล่าขึ้นมาตอนเปิดหน้าเว็บครั้งแรก
+        initChart(); 
+        
         setInterval(fetchData, 2000); 
         fetchData();
     </script>
