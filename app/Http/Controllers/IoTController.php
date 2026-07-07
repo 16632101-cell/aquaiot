@@ -80,13 +80,18 @@ class IoTController extends Controller
         $history = WaterQuality::where('device_id', $device_id)
                     ->latest()->take(60)->get()->reverse()->values();
 
-        $alerts = WaterQuality::where('device_id', $device_id)
-                    ->where(function($query) use ($device) {
-                        $query->where('ph_value', '<', $device->ph_min)
-                              ->orWhere('ph_value', '>', $device->ph_max)
-                              ->orWhere('turbidity', '>', $device->turb_max);
-                    })
-                    ->latest()->take(5)->get();
+        // 🌟 ระบบ Standby: ปิดการแจ้งเตือนถ้าอุปกรณ์ Offline
+        if ($device->device_status === 'offline') {
+            $alerts = []; // เคลียร์แจ้งเตือนทิ้งให้หมด
+        } else {
+            $alerts = WaterQuality::where('device_id', $device_id)
+                        ->where(function($query) use ($device) {
+                            $query->where('ph_value', '<', $device->ph_min)
+                                  ->orWhere('ph_value', '>', $device->ph_max)
+                                  ->orWhere('turbidity', '>', $device->turb_max);
+                        })
+                        ->latest()->take(5)->get();
+        }
 
         return response()->json([
             'device_status' => $device->device_status,
