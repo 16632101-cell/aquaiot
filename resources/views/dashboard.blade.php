@@ -38,7 +38,7 @@
         .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(0,0,0,0.2); filter: brightness(1.1); }
         .btn:active { transform: translateY(1px); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .btn-open { background: linear-gradient(135deg, #2ecc71, #27ae60); }
-        .btn-close { background: linear-gradient(135deg, #9b59b6, #8e44ad); } /* เปลี่ยนสีปุ่ม UV ให้ดูต่างจากแจ้งเตือน */
+        .btn-close { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
         
         /* Toggle Switch ล้ำๆ */
         .mode-container { display: flex; align-items: center; gap: 15px; background: #f8f9fa; padding: 10px 20px; border-radius: 50px; border: 1px solid #e9ecef;}
@@ -88,6 +88,7 @@
                     </form>
                     <form action="/delete-device/{{ $device->device_id }}" method="POST" style="margin:0;" onsubmit="return confirm('ยืนยันการลบอุปกรณ์นี้?');">
                         @csrf
+                        @method('DELETE')
                         <button type="submit" class="action-btn" title="ลบอุปกรณ์" style="background-color: #e74c3c;">X</button>
                     </form>
                 @endif
@@ -167,7 +168,7 @@
                         </h3>
                     </div>
                     
-                    <div class="mode-container">
+                    <div class="mode-container" id="mode-container-box">
                         <span class="mode-text text-manual" id="label-manual">MANUAL</span>
                         <label class="switch">
                             <input type="checkbox" id="modeToggle" onchange="toggleSystemMode()">
@@ -292,8 +293,37 @@
                 .then(res => res.json())
                 .then(data => {
                     if(!data) return;
+
+                    // 🌟 1. ดักจับสถานะ OFFLINE ที่นี่เลย!
+                    if (data.device_status === 'offline') {
+                        document.getElementById('ph-val').innerText = 'OFFLINE';
+                        document.getElementById('ph-val').style.color = '#95a5a6';
+                        document.getElementById('temp-val').innerText = 'OFFLINE';
+                        document.getElementById('temp-val').style.color = '#95a5a6';
+                        document.getElementById('turb-val').innerText = 'OFFLINE';
+                        document.getElementById('turb-val').style.color = '#95a5a6';
+
+                        // ล้างกราฟให้เกลี้ยง
+                        if(phChart) { phChart.data.labels = []; phChart.data.datasets[0].data = []; phChart.update(); }
+                        if(turbChart) { turbChart.data.labels = []; turbChart.data.datasets[0].data = []; turbChart.update(); }
+                        if(tempChart) { tempChart.data.labels = []; tempChart.data.datasets[0].data = []; tempChart.update(); }
+
+                        // ล้างแจ้งเตือนและแผงควบคุม
+                        document.getElementById('alert-log-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color: #95a5a6; padding: 20px;">💤 อุปกรณ์อยู่ในโหมดพักการทำงาน (Offline)</td></tr>';
+                        document.getElementById('mode-container-box').style.display = 'none';
+                        const mc = document.getElementById('manual-controls');
+                        if (mc) mc.style.display = 'none';
+
+                        checkAlerts(0, 0, 0, 0, 0, true); // สั่งปิดเสียงเตือน (true = บังคับ offline)
+                        return; // 🛑 หยุดการทำงานแค่นี้ ไม่ต้องไปทำคำสั่งข้างล่างต่อ!
+                    }
+
+                    // --- ถ้าออนไลน์ ให้ดึงข้อมูลมาแสดงตามปกติ ---
+                    document.getElementById('ph-val').style.color = '#2ecc71';
+                    document.getElementById('temp-val').style.color = '#e74c3c';
+                    document.getElementById('turb-val').style.color = '#f39c12';
+                    document.getElementById('mode-container-box').style.display = 'flex';
                     
-                    // จัดการ UI Toggle Switch โหมด
                     const toggle = document.getElementById('modeToggle');
                     const labelAuto = document.getElementById('label-auto');
                     const labelManual = document.getElementById('label-manual');
@@ -304,12 +334,12 @@
                             toggle.checked = true;
                             labelAuto.style.opacity = '1';
                             labelManual.style.opacity = '0.4';
-                            if(manualControls) manualControls.style.display = 'none'; // ซ่อนปุ่มกดเมื่อเป็นออโต้
+                            if(manualControls) manualControls.style.display = 'none'; 
                         } else {
                             toggle.checked = false;
                             labelAuto.style.opacity = '0.4';
                             labelManual.style.opacity = '1';
-                            if(manualControls) manualControls.style.display = 'flex'; // โชว์ปุ่มกดเมื่อเป็นแมนนวล
+                            if(manualControls) manualControls.style.display = 'flex'; 
                         }
                     }
 
@@ -325,7 +355,7 @@
                         document.getElementById('ph-val').innerText = parseFloat(data.ph_value).toFixed(2);
                         document.getElementById('temp-val').innerText = parseFloat(data.temperature).toFixed(1) + ' °C';
                         document.getElementById('turb-val').innerText = parseFloat(data.turbidity).toFixed(2) + ' NTU';
-                        checkAlerts(data.ph_value, data.turbidity, data.ph_min, data.ph_max, data.turb_max);
+                        checkAlerts(data.ph_value, data.turbidity, data.ph_min, data.ph_max, data.turb_max, false);
                     }
 
                     if (data.history && phChart && turbChart && tempChart) {
@@ -368,9 +398,19 @@
                 }).catch(err => console.log(err));
         }
 
-        function checkAlerts(ph, turbidity, ph_min, ph_max, turb_max) {
+        // 🌟 2. อัปเกรดฟังก์ชันเตือนเสียง ให้รองรับโหมด Offline
+        function checkAlerts(ph, turbidity, ph_min, ph_max, turb_max, isOffline) {
             const report = document.getElementById('alert-report');
             const sound = document.getElementById('alertSound');
+            
+            // ถ้า Offline ให้ซ่อนแถบแดงและเงียบเสียงไปเลย
+            if (isOffline) {
+                report.style.display = 'none';
+                sound.pause();
+                sound.currentTime = 0;
+                return;
+            }
+
             if (ph < ph_min || ph > ph_max || turbidity > turb_max) {
                 report.style.display = 'block';
                 sound.play().catch(() => {}); 
@@ -398,18 +438,16 @@
             }).catch(err => alert('❌ เกิดข้อผิดพลาดในการส่งข้อมูล'));
         }
 
-        // ฟังก์ชันรับการเลื่อนสวิตช์ Toggle
         function toggleSystemMode() {
             const isAuto = document.getElementById('modeToggle').checked;
             const targetMode = isAuto ? 'AUTO' : 'MANUAL';
             
-            // ส่งคำสั่งเปลี่ยนโหมดไปที่ Backend
             fetch('/send-command', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
                 body: JSON.stringify({ device_id: currentDevice, command_action: 'NONE', operating_mode: targetMode })
             }).then(res => {
-                if(res.ok) fetchData(); // โหลด UI ใหม่เพื่ออัปเดตการแสดงผลปุ่ม
+                if(res.ok) fetchData(); 
             });
         }
 
