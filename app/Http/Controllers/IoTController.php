@@ -33,11 +33,9 @@ class IoTController extends Controller
             WaterQuality::create($data);
         }
 
-        // 🌟 ดึง action มาเก็บไว้ในตัวแปรก่อน
         $actionToSend = $command ? $command->command_action : 'NONE';
         $modeToSend = $command ? $command->operating_mode : 'AUTO';
 
-        // 🌟 ถ้า action เป็น OPEN (ปล่อยสาร) ให้รีเซ็ตกลับเป็น NONE ทันที เพื่อไม่ให้มันปล่อยซ้ำ
         if ($actionToSend === 'OPEN' && $command) {
             $command->update(['command_action' => 'NONE']);
         }
@@ -75,14 +73,11 @@ class IoTController extends Controller
 
         $data    = WaterQuality::where('device_id', $device_id)->latest()->first();
         $command = SystemCommand::where('device_id', $device_id)->first();
-
-        // 🌟 ดึงข้อมูลย้อนหลัง 60 รายการ
         $history = WaterQuality::where('device_id', $device_id)
                     ->latest()->take(60)->get()->reverse()->values();
 
-        // 🌟 ระบบ Standby: ปิดการแจ้งเตือนถ้าอุปกรณ์ Offline
         if ($device->device_status === 'offline') {
-            $alerts = []; // เคลียร์แจ้งเตือนทิ้งให้หมด
+            $alerts = []; 
         } else {
             $alerts = WaterQuality::where('device_id', $device_id)
                         ->where(function($query) use ($device) {
@@ -105,6 +100,26 @@ class IoTController extends Controller
             'history'       => $history, 
             'alerts'        => $alerts   
         ]);
+    }
+
+    // 🌟 [ของใหม่] เรดาร์สแกนอุปกรณ์ที่มีปัญหาทั้งหมด
+    public function getAlertsSummary()
+    {
+        $devices = IoTDevice::where('device_status', 'online')->get();
+        $alertingDeviceIds = [];
+
+        foreach ($devices as $device) {
+            $latestData = WaterQuality::where('device_id', $device->device_id)->latest()->first();
+            
+            if ($latestData) {
+                if ($latestData->ph_value < $device->ph_min || 
+                    $latestData->ph_value > $device->ph_max || 
+                    $latestData->turbidity > $device->turb_max) {
+                    $alertingDeviceIds[] = $device->device_id;
+                }
+            }
+        }
+        return response()->json(['alerting_devices' => $alertingDeviceIds]);
     }
 
     public function sendCommand(Request $request)

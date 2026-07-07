@@ -40,7 +40,7 @@
         .btn-open { background: linear-gradient(135deg, #2ecc71, #27ae60); }
         .btn-close { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
         
-        /* Toggle Switch ล้ำๆ */
+        /* Toggle Switch */
         .mode-container { display: flex; align-items: center; gap: 15px; background: #f8f9fa; padding: 10px 20px; border-radius: 50px; border: 1px solid #e9ecef;}
         .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -75,8 +75,9 @@
         
         @foreach($devices as $device)
             <div class="device-item">
-                <button class="device-btn" onclick="loadDevice({{ $device->device_id }}, '{{ $device->device_name }}')">
+                <button class="device-btn" id="sidebar-btn-{{ $device->device_id }}" onclick="loadDevice({{ $device->device_id }}, '{{ $device->device_name }}')">
                     <span style="font-size: 16px;">🐟</span> {{ $device->device_name }}
+                    <span id="sidebar-alert-{{ $device->device_id }}" class="sidebar-alert" style="display: none; color: #ffcccc; font-weight: bold; animation: blinker 1.5s linear infinite; margin-left: 5px;">⚠️</span>
                 </button>
                 
                 @if(Auth::user()->role == 'admin')
@@ -288,13 +289,32 @@
             fetchData(); 
         }
 
+        // 🌟 [ของใหม่] ฟังก์ชันเรดาร์สแกนหาตู้ปลาที่มีปัญหา
+        function fetchSidebarAlerts() {
+            fetch('/api/get-alerts-summary')
+                .then(res => res.json())
+                .then(data => {
+                    if (data && data.alerting_devices) {
+                        // ปิดไอคอนของทุกตู้ก่อน
+                        document.querySelectorAll('.sidebar-alert').forEach(el => el.style.display = 'none');
+                        
+                        // เปิดโชว์เฉพาะตู้ที่มีปัญหา
+                        data.alerting_devices.forEach(id => {
+                            let icon = document.getElementById(`sidebar-alert-${id}`);
+                            if(icon) {
+                                icon.style.display = 'inline-block';
+                            }
+                        });
+                    }
+                }).catch(err => console.log(err));
+        }
+
         function fetchData() {
             fetch(`/api/get-latest-data/${currentDevice}`)
                 .then(res => res.json())
                 .then(data => {
                     if(!data) return;
 
-                    // 🌟 1. ดักจับสถานะ OFFLINE ที่นี่เลย!
                     if (data.device_status === 'offline') {
                         document.getElementById('ph-val').innerText = 'OFFLINE';
                         document.getElementById('ph-val').style.color = '#95a5a6';
@@ -303,22 +323,19 @@
                         document.getElementById('turb-val').innerText = 'OFFLINE';
                         document.getElementById('turb-val').style.color = '#95a5a6';
 
-                        // ล้างกราฟให้เกลี้ยง
                         if(phChart) { phChart.data.labels = []; phChart.data.datasets[0].data = []; phChart.update(); }
                         if(turbChart) { turbChart.data.labels = []; turbChart.data.datasets[0].data = []; turbChart.update(); }
                         if(tempChart) { tempChart.data.labels = []; tempChart.data.datasets[0].data = []; tempChart.update(); }
 
-                        // ล้างแจ้งเตือนและแผงควบคุม
                         document.getElementById('alert-log-body').innerHTML = '<tr><td colspan="4" style="text-align:center; color: #95a5a6; padding: 20px;">💤 อุปกรณ์อยู่ในโหมดพักการทำงาน (Offline)</td></tr>';
                         document.getElementById('mode-container-box').style.display = 'none';
                         const mc = document.getElementById('manual-controls');
                         if (mc) mc.style.display = 'none';
 
-                        checkAlerts(0, 0, 0, 0, 0, true); // สั่งปิดเสียงเตือน (true = บังคับ offline)
-                        return; // 🛑 หยุดการทำงานแค่นี้ ไม่ต้องไปทำคำสั่งข้างล่างต่อ!
+                        checkAlerts(0, 0, 0, 0, 0, true); 
+                        return; 
                     }
 
-                    // --- ถ้าออนไลน์ ให้ดึงข้อมูลมาแสดงตามปกติ ---
                     document.getElementById('ph-val').style.color = '#2ecc71';
                     document.getElementById('temp-val').style.color = '#e74c3c';
                     document.getElementById('turb-val').style.color = '#f39c12';
@@ -398,12 +415,11 @@
                 }).catch(err => console.log(err));
         }
 
-        // 🌟 2. อัปเกรดฟังก์ชันเตือนเสียง ให้รองรับโหมด Offline
+        // 🌟 [แก้บั๊ก] ฟังก์ชันระบบเสียงที่สมบูรณ์ พิมพ์ถูกต้องแล้ว
         function checkAlerts(ph, turbidity, ph_min, ph_max, turb_max, isOffline) {
             const report = document.getElementById('alert-report');
             const sound = document.getElementById('alertSound');
             
-            // ถ้า Offline ให้ซ่อนแถบแดงและเงียบเสียงไปเลย
             if (isOffline) {
                 report.style.display = 'none';
                 sound.pause();
@@ -413,11 +429,26 @@
 
             if (ph < ph_min || ph > ph_max || turbidity > turb_max) {
                 report.style.display = 'block';
-                sound.play().catch(() => {}); 
+                let playPromise = sound.play();
+                
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        // 🛑 ถ้าเบราว์เซอร์บล็อกเสียง
+                        report.innerHTML = '⚠️ แจ้งเตือนฉุกเฉิน: ตรวจพบคุณภาพน้ำผิดปกติ!<br><span style="font-size: 16px; font-weight: bold; cursor: pointer; text-decoration: underline; color: #c0392b;">🔊 คลิกที่ข้อความนี้เพื่อเปิดเสียงแจ้งเตือน!</span>';
+                        
+                        report.onclick = function() {
+                            sound.play();
+                            report.innerHTML = '⚠️ แจ้งเตือนฉุกเฉิน: ตรวจพบคุณภาพน้ำผิดปกติเกินเกณฑ์ที่กำหนด!';
+                            report.onclick = null; 
+                        };
+                    });
+                }
             } else {
                 report.style.display = 'none';
                 sound.pause();
                 sound.currentTime = 0;
+                report.innerHTML = '⚠️ แจ้งเตือนฉุกเฉิน: ตรวจพบคุณภาพน้ำผิดปกติเกินเกณฑ์ที่กำหนด!';
+                report.onclick = null;
             }
         }
 
@@ -464,8 +495,15 @@
 
         document.getElementById('current-device-display').innerText = `(ตู้: ${currentDeviceName})`;
         initCharts(); 
-        setInterval(fetchData, 2000); 
+        
+        // 🌟 ตั้งเวลาให้สแกนทั้งจอหลักและเรดาร์ทุกๆ 2 วินาที
+        setInterval(() => {
+            fetchData();
+            fetchSidebarAlerts();
+        }, 2000); 
+        
         fetchData();
+        fetchSidebarAlerts();
     </script>
     @endif
 </body>

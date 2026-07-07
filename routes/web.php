@@ -30,4 +30,7 @@ Route::middleware(['auth'])->group(function () {
     // เส้นทางสำหรับเซฟเกณฑ์แจ้งเตือน และ ส่งคำสั่ง (AJAX)
     Route::post('/update-thresholds/{device_id}', [IoTController::class, 'updateThresholds']);
     Route::post('/send-command', [IoTController::class, 'sendCommand']);
+    
+    // 🌟 [ของใหม่] เส้นทางสำหรับดึงข้อมูลเรดาร์แจ้งเตือน
+    Route::get('/api/get-alerts-summary', [IoTController::class, 'getAlertsSummary']);
 });
