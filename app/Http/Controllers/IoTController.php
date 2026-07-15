@@ -33,12 +33,53 @@ class IoTController extends Controller
             WaterQuality::create($data);
         }
 
-        // 🌟 ดึงสถานะแยกกันอย่างเด็ดขาด
+        // ==========================================
+        // 🤖 ระบบ AUTO MODE (บำบัดน้ำอัจฉริยะ)
+        // ==========================================
+        if ($command && $command->operating_mode === 'AUTO' && $device) {
+            
+            // เช็คว่าน้ำเสียหรือไม่?
+            $isBadWater = ($data['ph_value'] < $device->ph_min) || 
+                          ($data['ph_value'] > $device->ph_max) || 
+                          ($data['turbidity'] > $device->turb_max);
+
+            $cacheKeyRelease = 'last_release_' . $device->device_id;
+            $cacheKeyUv = 'pending_uv_' . $device->device_id;
+            $cooldownMinutes = 5;
+
+            if ($isBadWater) {
+                // ดึงเวลาล่าสุดที่เคยปล่อยสารมาดู
+                $lastRelease = cache()->get($cacheKeyRelease);
+
+                // ถ้าน้ำเสีย และ (ยังไม่เคยปล่อยสาร หรือ ผ่านมาเกิน 5 นาทีแล้ว)
+                if (!$lastRelease || now()->diffInMinutes($lastRelease) >= $cooldownMinutes) {
+                    
+                    // 1️⃣ สั่งปล่อยสารบำบัด!
+                    $command->update(['command_action' => 'OPEN']);
+
+                    // บันทึกเวลาที่ปล่อยสาร ล็อคไว้ 5 นาที (บวกเผื่อเวลาเก็บกวาดนิดหน่อย)
+                    cache()->put($cacheKeyRelease, now(), now()->addMinutes($cooldownMinutes + 1));
+
+                    // 📝 แอบจดคิวไว้ว่า ให้เปิดไฟ UV ในรอบการขอข้อมูลถัดไป (รอกลไก Servo ทำงานก่อน)
+                    cache()->put($cacheKeyUv, true, now()->addMinutes(1));
+                }
+            }
+
+            // 2️⃣ สั่งเปิดไฟ UV เป็นตัวเร่งปฏิกิริยา (ทำงานหลังจากบอร์ดทำ Servo เสร็จแล้ว)
+            if ($command->command_action !== 'OPEN' && cache()->get($cacheKeyUv)) {
+                $command->update(['uv_status' => 'ON']);
+                cache()->forget($cacheKeyUv); // ล้างคิวทิ้ง
+            }
+        }
+
+        // ==========================================
+        // 🌟 ดึงสถานะแยกกันอย่างเด็ดขาดเพื่อส่งให้ Arduino
+        // ==========================================
         $actionToSend = $command ? $command->command_action : 'NONE';
         $uvStatusToSend = $command ? $command->uv_status : 'OFF';
         $modeToSend = $command ? $command->operating_mode : 'AUTO';
 
-        // 🌟 สั่งเสร็จให้ Reset ทั้ง Servo และ UV เพื่อป้องกันไฟติดวนลูป!
+        // 🌟 สั่งเสร็จให้ Reset ทันทีเพื่อป้องกันไฟติดวนลูปหรือปล่อยสารซ้ำซ้อน
         if ($actionToSend === 'OPEN' && $command) {
             $command->update(['command_action' => 'NONE']);
         }
@@ -48,8 +89,8 @@ class IoTController extends Controller
 
         return response()->json([
             'status'       => $device ? $device->device_status : 'offline', 
-            'servo_action' => $actionToSend, // -> จะถูกแปลงเป็น SERVO_ACTION ที่บอร์ด
-            'uv_status'    => $uvStatusToSend, // -> จะถูกแปลงเป็น UV_STATUS ที่บอร์ด
+            'servo_action' => $actionToSend, 
+            'uv_status'    => $uvStatusToSend, 
             'mode'         => $modeToSend  
         ]);
     }
@@ -135,7 +176,6 @@ class IoTController extends Controller
             return response()->json(['status' => 'error', 'message' => 'เฉพาะ Admin เท่านั้น'], 403);
         }
 
-        // 🌟 แก้ไขการ Validate ให้รับค่าแบบเลือกส่งได้ (Nullable)
         $request->validate([
             'device_id'      => 'required|integer|exists:io_t_devices,device_id',
             'command_action' => 'nullable|in:OPEN,NONE',
@@ -145,7 +185,6 @@ class IoTController extends Controller
 
         $command = SystemCommand::firstOrNew(['device_id' => $request->device_id]);
 
-        // 🌟 อัปเดตเฉพาะค่าที่มีการส่งเข้ามา (ค่าที่ไม่ได้ส่งมาจะคงสถานะเดิมไว้)
         if ($request->has('command_action')) {
             $command->command_action = $request->command_action;
         }
