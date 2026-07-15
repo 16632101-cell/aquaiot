@@ -33,17 +33,21 @@ class IoTController extends Controller
             WaterQuality::create($data);
         }
 
+        // 🌟 ดึงสถานะแยกกันอย่างเด็ดขาด
         $actionToSend = $command ? $command->command_action : 'NONE';
+        $uvStatusToSend = $command ? $command->uv_status : 'OFF';
         $modeToSend = $command ? $command->operating_mode : 'AUTO';
 
+        // 🌟 สั่งเสร็จให้ Reset เฉพาะ Servo (UV ปล่อยค้างไว้จนกว่าจะกดปิด)
         if ($actionToSend === 'OPEN' && $command) {
             $command->update(['command_action' => 'NONE']);
         }
 
         return response()->json([
-            'status' => $device ? $device->device_status : 'offline', 
-            'action' => $actionToSend, 
-            'mode'   => $modeToSend  
+            'status'       => $device ? $device->device_status : 'offline', 
+            'servo_action' => $actionToSend, // -> จะถูกแปลงเป็น SERVO_ACTION ที่บอร์ด
+            'uv_status'    => $uvStatusToSend, // -> จะถูกแปลงเป็น UV_STATUS ที่บอร์ด
+            'mode'         => $modeToSend  
         ]);
     }
 
@@ -53,11 +57,12 @@ class IoTController extends Controller
 
         if ($command) {
             return response()->json([
-                'action' => $command->command_action,
-                'mode'   => $command->operating_mode,
+                'action'    => $command->command_action,
+                'uv_status' => $command->uv_status,
+                'mode'      => $command->operating_mode,
             ]);
         }
-        return response()->json(['action' => 'NONE', 'mode' => 'AUTO']);
+        return response()->json(['action' => 'NONE', 'uv_status' => 'OFF', 'mode' => 'AUTO']);
     }
 
     // ==========================================
@@ -102,7 +107,6 @@ class IoTController extends Controller
         ]);
     }
 
-    // 🌟 [ของใหม่] เรดาร์สแกนอุปกรณ์ที่มีปัญหาทั้งหมด
     public function getAlertsSummary()
     {
         $devices = IoTDevice::where('device_status', 'online')->get();
@@ -128,19 +132,28 @@ class IoTController extends Controller
             return response()->json(['status' => 'error', 'message' => 'เฉพาะ Admin เท่านั้น'], 403);
         }
 
+        // 🌟 แก้ไขการ Validate ให้รับค่าแบบเลือกส่งได้ (Nullable)
         $request->validate([
             'device_id'      => 'required|integer|exists:io_t_devices,device_id',
-            'command_action' => 'required|in:OPEN,CLOSE,NONE',
-            'operating_mode' => 'required|in:AUTO,MANUAL',
+            'command_action' => 'nullable|in:OPEN,NONE',
+            'uv_status'      => 'nullable|in:ON,OFF',
+            'operating_mode' => 'nullable|in:AUTO,MANUAL',
         ]);
 
-        SystemCommand::updateOrCreate(
-            ['device_id'      => $request->device_id],
-            [
-                'command_action' => $request->command_action,
-                'operating_mode' => $request->operating_mode,
-            ]
-        );
+        $command = SystemCommand::firstOrNew(['device_id' => $request->device_id]);
+
+        // 🌟 อัปเดตเฉพาะค่าที่มีการส่งเข้ามา (ค่าที่ไม่ได้ส่งมาจะคงสถานะเดิมไว้)
+        if ($request->has('command_action')) {
+            $command->command_action = $request->command_action;
+        }
+        if ($request->has('uv_status')) {
+            $command->uv_status = $request->uv_status;
+        }
+        if ($request->has('operating_mode')) {
+            $command->operating_mode = $request->operating_mode;
+        }
+
+        $command->save();
 
         return response()->json(['status' => 'success']);
     }

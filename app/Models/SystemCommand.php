@@ -12,6 +12,7 @@ class SystemCommand extends Model
         'device_id',
         'command_action',
         'operating_mode',
+        'uv_status',
     ];
 
     // Relationship: คำสั่งนี้เป็นของอุปกรณ์ไหน

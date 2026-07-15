@@ -39,6 +39,7 @@
         .btn:active { transform: translateY(1px); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
         .btn-open { background: linear-gradient(135deg, #2ecc71, #27ae60); }
         .btn-close { background: linear-gradient(135deg, #9b59b6, #8e44ad); }
+        .btn-off { background: linear-gradient(135deg, #7f8c8d, #34495e); } /* เพิ่มสีปุ่มปิดไฟ */
         
         /* Toggle Switch */
         .mode-container { display: flex; align-items: center; gap: 15px; background: #f8f9fa; padding: 10px 20px; border-radius: 50px; border: 1px solid #e9ecef;}
@@ -181,11 +182,15 @@
                 
                 @if(Auth::user()->role == 'admin')
                     <div id="manual-controls" style="margin-bottom: 25px; display: flex; gap: 15px; flex-wrap: wrap;">
-                        <button class="btn btn-open" onclick="sendCommand('OPEN', 'MANUAL')">
+                        <!-- 🌟 ปุ่มถูกอัปเกรดให้เรียกฟังก์ชันแบบแยกประเภท -->
+                        <button class="btn btn-open" onclick="sendDeviceCommand('SERVO', 'OPEN')">
                             🧪 ปล่อยสารบำบัด
                         </button>
-                        <button class="btn btn-close" onclick="sendCommand('CLOSE', 'MANUAL')">
+                        <button class="btn btn-close" onclick="sendDeviceCommand('UV', 'ON')">
                             💡 เปิดไฟ UV
+                        </button>
+                        <button class="btn btn-off" onclick="sendDeviceCommand('UV', 'OFF')">
+                            🔌 ปิดไฟ UV
                         </button>
                     </div>
 
@@ -289,21 +294,15 @@
             fetchData(); 
         }
 
-        // 🌟 [ของใหม่] ฟังก์ชันเรดาร์สแกนหาตู้ปลาที่มีปัญหา
         function fetchSidebarAlerts() {
             fetch('/api/get-alerts-summary')
                 .then(res => res.json())
                 .then(data => {
                     if (data && data.alerting_devices) {
-                        // ปิดไอคอนของทุกตู้ก่อน
                         document.querySelectorAll('.sidebar-alert').forEach(el => el.style.display = 'none');
-                        
-                        // เปิดโชว์เฉพาะตู้ที่มีปัญหา
                         data.alerting_devices.forEach(id => {
                             let icon = document.getElementById(`sidebar-alert-${id}`);
-                            if(icon) {
-                                icon.style.display = 'inline-block';
-                            }
+                            if(icon) { icon.style.display = 'inline-block'; }
                         });
                     }
                 }).catch(err => console.log(err));
@@ -415,7 +414,6 @@
                 }).catch(err => console.log(err));
         }
 
-        // 🌟 [แก้บั๊ก] ฟังก์ชันระบบเสียงที่สมบูรณ์ พิมพ์ถูกต้องแล้ว
         function checkAlerts(ph, turbidity, ph_min, ph_max, turb_max, isOffline) {
             const report = document.getElementById('alert-report');
             const sound = document.getElementById('alertSound');
@@ -433,9 +431,7 @@
                 
                 if (playPromise !== undefined) {
                     playPromise.catch(error => {
-                        // 🛑 ถ้าเบราว์เซอร์บล็อกเสียง
                         report.innerHTML = '⚠️ แจ้งเตือนฉุกเฉิน: ตรวจพบคุณภาพน้ำผิดปกติ!<br><span style="font-size: 16px; font-weight: bold; cursor: pointer; text-decoration: underline; color: #c0392b;">🔊 คลิกที่ข้อความนี้เพื่อเปิดเสียงแจ้งเตือน!</span>';
-                        
                         report.onclick = function() {
                             sound.play();
                             report.innerHTML = '⚠️ แจ้งเตือนฉุกเฉิน: ตรวจพบคุณภาพน้ำผิดปกติเกินเกณฑ์ที่กำหนด!';
@@ -469,6 +465,7 @@
             }).catch(err => alert('❌ เกิดข้อผิดพลาดในการส่งข้อมูล'));
         }
 
+        // 🌟 ฟังก์ชันสลับโหมด อัปเดตใหม่ ไม่เตะคำสั่งเดิมทิ้ง ส่งแค่โหมดอย่างเดียว!
         function toggleSystemMode() {
             const isAuto = document.getElementById('modeToggle').checked;
             const targetMode = isAuto ? 'AUTO' : 'MANUAL';
@@ -476,17 +473,24 @@
             fetch('/send-command', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
-                body: JSON.stringify({ device_id: currentDevice, command_action: 'NONE', operating_mode: targetMode })
+                body: JSON.stringify({ device_id: currentDevice, operating_mode: targetMode })
             }).then(res => {
                 if(res.ok) fetchData(); 
             });
         }
 
-        function sendCommand(action, mode) {
+        // 🌟 ฟังก์ชันสั่งงานแยกประเภท (ฉลาดขึ้น!)
+        function sendDeviceCommand(type, value) {
+            let payload = { device_id: currentDevice, operating_mode: 'MANUAL' };
+            
+            // แยกคีย์ส่งไปหา Controller ให้ตรงตามฐานข้อมูลที่เราเพิ่งแก้
+            if (type === 'SERVO') { payload.command_action = value; }
+            if (type === 'UV')    { payload.uv_status = value; }
+
             fetch('/send-command', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
-                body: JSON.stringify({ device_id: currentDevice, command_action: action, operating_mode: mode })
+                body: JSON.stringify(payload)
             }).then(res => {
                 if(res.ok) alert(`📡 ส่งคำสั่งเรียบร้อยแล้ว`);
                 else alert('❌ เกิดข้อผิดพลาดในการส่งคำสั่ง');
@@ -496,7 +500,6 @@
         document.getElementById('current-device-display').innerText = `(ตู้: ${currentDeviceName})`;
         initCharts(); 
         
-        // 🌟 ตั้งเวลาให้สแกนทั้งจอหลักและเรดาร์ทุกๆ 2 วินาที
         setInterval(() => {
             fetchData();
             fetchSidebarAlerts();
