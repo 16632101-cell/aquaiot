@@ -189,9 +189,6 @@
                         <button class="btn btn-close" onclick="sendDeviceCommand('UV', 'ON')">
                             💡 เปิดไฟ UV
                         </button>
-                        <button class="btn btn-off" onclick="sendDeviceCommand('UV', 'OFF')">
-                            🔌 ปิดไฟ UV
-                        </button>
                     </div>
 
                     <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border: 1px solid #e9ecef;">
