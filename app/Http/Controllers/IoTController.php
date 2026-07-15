@@ -36,7 +36,7 @@ class IoTController extends Controller
         $cacheKeyRelease = 'last_release_' . $device->device_id;
         $cacheKeyUv = 'pending_uv_' . $device->device_id;
         
-        // 🌟 ตั้งค่าคูลดาวน์ (ลดเหลือ 1 นาทีให้เทสก่อน ถ้าเสร็จแล้วแก้ตรงนี้เป็น 5 ได้เลย)
+        // 🌟 ตั้งค่าคูลดาวน์ 
         $cooldownMinutes = 1; 
 
         // ==========================================
@@ -55,14 +55,14 @@ class IoTController extends Controller
                     $command->update(['command_action' => 'OPEN']);
                     // บันทึกเวลาคูลดาวน์
                     cache()->put($cacheKeyRelease, now(), now()->addMinutes($cooldownMinutes + 1));
-                    // 📝 เอาไฟ UV เข้าคิว
+                    // 📝 ระบบ AUTO เท่านั้นที่จะแอบจดคิวเปิดไฟ UV ไว้
                     cache()->put($cacheKeyUv, true, now()->addMinutes(1));
                 }
             }
         }
 
         // ==========================================
-        // 🌟 2️⃣ สั่งเปิดไฟ UV ตามหลัง Servo (แยกออกมาเพื่อให้ Manual ใช้ได้ด้วย)
+        // 🌟 2️⃣ สั่งเปิดไฟ UV ตามหลัง Servo (เฉพาะเมื่อมีคิวจาก AUTO)
         // ==========================================
         if ($command && $command->command_action !== 'OPEN' && cache()->get($cacheKeyUv)) {
             $command->update(['uv_status' => 'ON']);
@@ -188,8 +188,7 @@ class IoTController extends Controller
             // 🌟 ทะลวงคูลดาวน์! ถ้ากดปุ่มปล่อยสารแบบ Manual ให้ล้างคูลดาวน์ทิ้งทันที
             if ($request->command_action === 'OPEN') {
                 cache()->forget('last_release_' . $request->device_id);
-                // เข้าคิวเปิด UV ให้ด้วย (ทำงานเนียนๆ เหมือนระบบ Auto)
-                cache()->put('pending_uv_' . $request->device_id, true, now()->addMinutes(1));
+                // 🚫 ลบโค้ดแอบจดคิวเปิดไฟ UV ทิ้งไปแล้ว!
             }
         }
         
