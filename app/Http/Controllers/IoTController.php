@@ -38,9 +38,12 @@ class IoTController extends Controller
         $uvStatusToSend = $command ? $command->uv_status : 'OFF';
         $modeToSend = $command ? $command->operating_mode : 'AUTO';
 
-        // 🌟 สั่งเสร็จให้ Reset เฉพาะ Servo (UV ปล่อยค้างไว้จนกว่าจะกดปิด)
+        // 🌟 สั่งเสร็จให้ Reset ทั้ง Servo และ UV เพื่อป้องกันไฟติดวนลูป!
         if ($actionToSend === 'OPEN' && $command) {
             $command->update(['command_action' => 'NONE']);
+        }
+        if ($uvStatusToSend === 'ON' && $command) {
+            $command->update(['uv_status' => 'OFF']);
         }
 
         return response()->json([
