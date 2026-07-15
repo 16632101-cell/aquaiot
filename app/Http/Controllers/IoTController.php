@@ -33,53 +33,50 @@ class IoTController extends Controller
             WaterQuality::create($data);
         }
 
+        $cacheKeyRelease = 'last_release_' . $device->device_id;
+        $cacheKeyUv = 'pending_uv_' . $device->device_id;
+        
+        // 🌟 ตั้งค่าคูลดาวน์ (ลดเหลือ 1 นาทีให้เทสก่อน ถ้าเสร็จแล้วแก้ตรงนี้เป็น 5 ได้เลย)
+        $cooldownMinutes = 1; 
+
         // ==========================================
-        // 🤖 ระบบ AUTO MODE (บำบัดน้ำอัจฉริยะ)
+        // 🤖 1️⃣ ระบบ AUTO MODE (บำบัดน้ำอัจฉริยะ)
         // ==========================================
         if ($command && $command->operating_mode === 'AUTO' && $device) {
             
-            // เช็คว่าน้ำเสียหรือไม่?
             $isBadWater = ($data['ph_value'] < $device->ph_min) || 
                           ($data['ph_value'] > $device->ph_max) || 
                           ($data['turbidity'] > $device->turb_max);
 
-            $cacheKeyRelease = 'last_release_' . $device->device_id;
-            $cacheKeyUv = 'pending_uv_' . $device->device_id;
-            $cooldownMinutes = 5;
-
             if ($isBadWater) {
-                // ดึงเวลาล่าสุดที่เคยปล่อยสารมาดู
                 $lastRelease = cache()->get($cacheKeyRelease);
 
-                // ถ้าน้ำเสีย และ (ยังไม่เคยปล่อยสาร หรือ ผ่านมาเกิน 5 นาทีแล้ว)
                 if (!$lastRelease || now()->diffInMinutes($lastRelease) >= $cooldownMinutes) {
-                    
-                    // 1️⃣ สั่งปล่อยสารบำบัด!
                     $command->update(['command_action' => 'OPEN']);
-
-                    // บันทึกเวลาที่ปล่อยสาร ล็อคไว้ 5 นาที (บวกเผื่อเวลาเก็บกวาดนิดหน่อย)
+                    // บันทึกเวลาคูลดาวน์
                     cache()->put($cacheKeyRelease, now(), now()->addMinutes($cooldownMinutes + 1));
-
-                    // 📝 แอบจดคิวไว้ว่า ให้เปิดไฟ UV ในรอบการขอข้อมูลถัดไป (รอกลไก Servo ทำงานก่อน)
+                    // 📝 เอาไฟ UV เข้าคิว
                     cache()->put($cacheKeyUv, true, now()->addMinutes(1));
                 }
-            }
-
-            // 2️⃣ สั่งเปิดไฟ UV เป็นตัวเร่งปฏิกิริยา (ทำงานหลังจากบอร์ดทำ Servo เสร็จแล้ว)
-            if ($command->command_action !== 'OPEN' && cache()->get($cacheKeyUv)) {
-                $command->update(['uv_status' => 'ON']);
-                cache()->forget($cacheKeyUv); // ล้างคิวทิ้ง
             }
         }
 
         // ==========================================
-        // 🌟 ดึงสถานะแยกกันอย่างเด็ดขาดเพื่อส่งให้ Arduino
+        // 🌟 2️⃣ สั่งเปิดไฟ UV ตามหลัง Servo (แยกออกมาเพื่อให้ Manual ใช้ได้ด้วย)
+        // ==========================================
+        if ($command && $command->command_action !== 'OPEN' && cache()->get($cacheKeyUv)) {
+            $command->update(['uv_status' => 'ON']);
+            cache()->forget($cacheKeyUv); // ล้างคิวทิ้ง
+        }
+
+        // ==========================================
+        // 🌟 เตรียมข้อมูลส่งกลับ Arduino
         // ==========================================
         $actionToSend = $command ? $command->command_action : 'NONE';
         $uvStatusToSend = $command ? $command->uv_status : 'OFF';
         $modeToSend = $command ? $command->operating_mode : 'AUTO';
 
-        // 🌟 สั่งเสร็จให้ Reset ทันทีเพื่อป้องกันไฟติดวนลูปหรือปล่อยสารซ้ำซ้อน
+        // 🌟 สั่งเสร็จให้ Reset ทันทีเพื่อป้องกันการส่งคำสั่งซ้ำ
         if ($actionToSend === 'OPEN' && $command) {
             $command->update(['command_action' => 'NONE']);
         }
@@ -187,7 +184,15 @@ class IoTController extends Controller
 
         if ($request->has('command_action')) {
             $command->command_action = $request->command_action;
+            
+            // 🌟 ทะลวงคูลดาวน์! ถ้ากดปุ่มปล่อยสารแบบ Manual ให้ล้างคูลดาวน์ทิ้งทันที
+            if ($request->command_action === 'OPEN') {
+                cache()->forget('last_release_' . $request->device_id);
+                // เข้าคิวเปิด UV ให้ด้วย (ทำงานเนียนๆ เหมือนระบบ Auto)
+                cache()->put('pending_uv_' . $request->device_id, true, now()->addMinutes(1));
+            }
         }
+        
         if ($request->has('uv_status')) {
             $command->uv_status = $request->uv_status;
         }
